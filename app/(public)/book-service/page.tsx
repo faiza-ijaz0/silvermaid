@@ -361,61 +361,101 @@ export default function BookService() {
 
   const nextStep = () => setStep((prev) => Math.min(prev + 1, totalSteps));
   const prevStep = () => setStep((prev) => Math.max(prev - 1, 1));
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (step < totalSteps) {
-      nextStep();
-    } else {
-      // Complete booking - Save to Firebase
-      try {
-        // Validate required fields
-        if (
-          !formData.name ||
-          !formData.email ||
-          !formData.phone ||
-          !formData.serviceId ||
-          !formData.date
-        ) {
-          alert("Please fill all required fields");
-          return;
-        }
-
-        // Save to Firebase
-        const result = await saveBookingToFirebase(formData);
-
-        if (result.success) {
-          // Store latest booking details for popup
-          setLatestBooking(formData);
-
-          // Show success popup
-          setShowSuccessPopup(true);
-
-          // Reset form
-          setFormData({
-            name: "",
-            email: "",
-            phone: "",
-            serviceId: "",
-            serviceName: "",
-            propertyType: "apartment",
-            area: "",
-            frequency: "once",
-            date: "",
-            time: "",
-            message: "",
-            staffId: "",
-            staffName: "",
-          });
-          setStep(1);
-        }
-      } catch (error: any) {
-        console.error("Booking error:", error);
-        alert("Booking failed. Please try again.");
+  if (step < totalSteps) {
+    nextStep();
+  } else {
+    try {
+      // Validate required fields
+      if (
+        !formData.name ||
+        !formData.email ||
+        !formData.phone ||
+        !formData.serviceId ||
+        !formData.date
+      ) {
+        alert("Please fill all required fields");
+        return;
       }
+
+      // Save to Firebase
+      const result = await saveBookingToFirebase(formData);
+
+      if (result.success) {
+        // ============= 📧 EMAIL SEND KARO - FIXED VERSION =============
+        try {
+          console.log("📧 Sending email notification...");
+          
+          // DEBUG: Check values before sending
+          console.log("📧 formData.staffName:", formData.staffName);
+          console.log("📧 formData.staffId:", formData.staffId);
+          console.log("📧 formData.serviceName:", formData.serviceName);
+          
+          const emailResponse = await fetch('/api/send-booking-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clientName: formData.name,
+              clientEmail: formData.email,
+              clientPhone: formData.phone,
+              serviceName: formData.serviceName,
+              bookingDate: formData.date,
+              bookingTime: formData.time,
+              message: formData.message,
+              bookingId: result.bookingRef,
+              propertyType: formData.propertyType,
+              area: formData.area,
+              frequency: formData.frequency,
+              // 👇 IMPORTANT - STAFF FIELDS
+              staffName: formData.staffName,  // YEH NULL NAHI HONA CHAHIYE
+              staffId: formData.staffId,      // YEH BHI BHEJO
+              source: 'book-service-page',
+            }),
+          });
+          
+          const emailResult = await emailResponse.json();
+          
+          if (emailResult.success) {
+            console.log("✅ Email sent successfully!");
+            console.log("📧 Email response staffName:", emailResult.staffName);
+          } else {
+            console.error("❌ Email failed:", emailResult.error);
+          }
+        } catch (emailError) {
+          console.error("❌ Email error:", emailError);
+        }
+        // =============================================================
+
+        // Store latest booking details for popup
+        setLatestBooking(formData);
+        setShowSuccessPopup(true);
+
+        // Reset form
+        setFormData({
+          name: "",
+          email: "",
+          phone: "",
+          serviceId: "",
+          serviceName: "",
+          propertyType: "apartment",
+          area: "",
+          frequency: "once",
+          date: "",
+          time: "",
+          message: "",
+          staffId: "",
+          staffName: "",
+        });
+        setStep(1);
+      }
+    } catch (error: any) {
+      console.error("Booking error:", error);
+      alert("Booking failed. Please try again.");
     }
-  };
+  }
+};
 
   const handleChange = (
     e: React.ChangeEvent<
