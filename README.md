@@ -78,7 +78,7 @@ Staff sign in to see their dashboard, assigned jobs and tasks, attendance, leave
 | Server code | One Next.js Route Handler (`app/api/send-booking-email`) that sends email through Nodemailer over Gmail SMTP |
 | Documents & data | jsPDF, jspdf-autotable and html2canvas for PDFs; SheetJS (`xlsx`) for spreadsheets; date-fns |
 | Charts | Recharts |
-| Tooling | ESLint 9 (`eslint-config-next`), PostCSS, npm |
+| Tooling | ESLint 9 (`eslint-config-next`), PostCSS, Node.js built-in test runner (`node:test`), npm |
 | Hosting | Vercel |
 
 ---
@@ -143,6 +143,7 @@ silvermaid/
 ├── stores/                    # Zustand stores
 ├── public/                    # Static assets (logo, web manifest)
 ├── .env.example               # Template for required environment variables
+├── SECURITY.md                # Security model, open issues and required manual actions
 ├── components.json            # shadcn/ui configuration
 ├── eslint.config.mjs
 ├── next.config.ts
@@ -157,7 +158,7 @@ silvermaid/
 
 ### Prerequisites
 
-- **Node.js 20.9 or newer.** Next.js 16 requires at least this version. The project was verified on Node 24.
+- **Node.js 20.9 or newer** to run and build the app (required by Next.js 16 and Nodemailer 10). Running `npm test` needs **Node.js 22.18 or newer**, because the tests rely on Node's built-in TypeScript support. The project was verified on Node 24.
 - **npm.** The repository includes a `package-lock.json`.
 - A **Firebase project** with Authentication (email/password) and Cloud Firestore enabled. See [Firebase Setup](#firebase-setup).
 - A **Gmail account with an App Password**, needed only if you want booking notification emails to send.
@@ -191,7 +192,7 @@ Copy `.env.example` to `.env.local`. Next.js loads `.env.local` automatically, a
 | `GMAIL_APP_PASSWORD` | Booking emails | A [Google App Password](https://myaccount.google.com/apppasswords) for `GMAIL_USER`. Never use the account password. |
 | `BOOKING_NOTIFICATION_EMAIL` | Booking emails | Inbox that receives a message for each new booking |
 
-These variables are read only on the server (no `NEXT_PUBLIC_` prefix), so they never reach the browser. If any of them is missing, `/api/send-booking-email` returns `500 Email service is not configured`. The booking is still saved to Firestore and the customer still sees the confirmation, because the email step does not block the booking.
+These variables are read only on the server (no `NEXT_PUBLIC_` prefix), so they never reach the browser. If any of them is missing, `/api/send-booking-email` returns `503 Email service is temporarily unavailable`. The booking is still saved to Firestore and the customer still sees the confirmation, because the email step does not block the booking.
 
 ---
 
@@ -229,8 +230,9 @@ The Firebase web configuration is in `lib/firebase.ts`. To run against your own 
 | `npm run start` | Serve the production build |
 | `npm run lint` | Run ESLint |
 | `npx tsc --noEmit` | Run the TypeScript type check on its own |
+| `npm test` | Run the unit tests (`lib/**/*.test.ts`) with Node's built-in test runner |
 
-The project has no automated test suite.
+The tests cover booking email validation, HTML escaping, rate limiting and duplicate suppression (`lib/booking-email.test.ts`), and admin page access rules (`lib/admin-access.test.ts`). There are no UI or end-to-end tests.
 
 ---
 
@@ -242,9 +244,10 @@ Checks run on 17 October 2026 with Node 24.18 and npm 11.16:
 | --- | --- |
 | `npm ci` | Passed |
 | `npx tsc --noEmit` | Passed, 0 errors |
-| `npm run build` | Passed: compiled, type-checked and generated 136 routes |
-| `npm run lint` | **Failed**: 840 errors and 1,327 warnings. These were already in the codebase. Most are `@typescript-eslint/no-explicit-any` (547) and `react/no-unescaped-entities` (163). |
-| Automated tests | None in the repository |
+| `npm run build` | Passed: compiled with Next.js 16.4.2, type-checked and generated 135 routes |
+| `npm test` | Passed: 22 tests, 0 failures |
+| `npm run lint` | **Failed**: 873 errors and 1,294 warnings, all in existing code. Most are `@typescript-eslint/no-explicit-any`, `react/no-unescaped-entities`, and React Compiler rules (`react-hooks`) added by `eslint-config-next` 16.4. Files added or changed in the security pass lint cleanly or have fewer problems than before. |
+| `npm audit --omit=dev` | 5 high, 0 critical. See [SECURITY.md](SECURITY.md#known-open-issues) for why these remain. |
 
 ---
 
@@ -266,16 +269,18 @@ You can run the app on any other host that supports Next.js 16 with `npm run bui
 - **Keep secrets in environment variables.** `.env*` files are ignored by Git, and only `.env.example` (placeholders only) is committed. Never commit `.env.local`.
 - **The Firebase web config is not a secret.** The API key in `lib/firebase.ts` only identifies the project to Google and is visible in every browser that loads the app. What actually protects the data is **Firestore and Storage security rules**, together with API-key restrictions in Google Cloud. Those rules are managed in the Firebase console and are not stored in this repository. Make sure they require authentication and check each user's role before allowing writes.
 - **Gmail credentials.** Use a dedicated sending account with an App Password and rotate it whenever it might have been exposed. Earlier commits in this repository contained a hard-coded App Password. That credential should be treated as compromised and revoked.
-- **Demo credentials.** `lib/auth.ts` (`DEMO_CREDENTIALS`) and the `/debug/auth` page hold example credentials for testing. Make sure no real account uses them, and consider removing the debug page from production builds.
+- **Booking email endpoint.** `/api/send-booking-email` validates its input and escapes all customer-supplied values in the email. It also applies a per-instance rate limit and duplicate suppression; add a Vercel Firewall rule for durable limits.
+
+See [SECURITY.md](SECURITY.md) for the full security model, the open issues and the exact manual steps required in Google, Firebase and Vercel.
 
 ---
 
 ## Known Limitations
 
-- **Access control runs in the browser.** Portal sessions are stored in `localStorage`, and the admin layout uses `allowedPages` to choose which navigation items to show. The repository has no server-side middleware for protecting routes. Data security depends on Firestore security rules (see above).
+- **Access control runs in the browser.** The admin and employee layouts verify the user through Firebase Auth and their `users-role` record before rendering, and the admin layout enforces `allowedPages` on every admin URL. These are UI guards: because the browser talks to Firestore directly, data security depends on Firestore security rules (see [SECURITY.md](SECURITY.md)).
 - **Only the admin and employee portals have working sign-in.** The manager, supervisor, client and guest sign-in pages under `app/login/*` are empty placeholders. Two pages, `app/manager/approvals` and `app/manager/clients`, are also placeholders.
-- **No automated tests and lint errors remain.** See [Quality Checks](#quality-checks).
-- **Some dependencies have open advisories.** At the time of writing, `npm audit --omit=dev` reports advisories for transitive dependencies and for `xlsx` (SheetJS), which has no fix on npm. SheetJS publishes fixed versions on its own CDN.
+- **Limited test coverage and lint errors remain.** Unit tests cover the booking email and admin access logic only. See [Quality Checks](#quality-checks).
+- **Some dependencies have open advisories.** `@grpc/grpc-js` comes in through Firebase, which pins a vulnerable range even in its latest release. `xlsx` has no fix on npm, but the app only writes spreadsheets, so the parsing vulnerabilities are not reachable. Details are in [SECURITY.md](SECURITY.md#known-open-issues).
 
 ---
 
