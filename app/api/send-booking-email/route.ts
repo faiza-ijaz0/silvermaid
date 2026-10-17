@@ -5,8 +5,19 @@ export async function POST(request: Request) {
   console.log('📧 Email API called - START');
   
   try {
+    const gmailUser = process.env.GMAIL_USER;
+    const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+    const notificationEmail = process.env.BOOKING_NOTIFICATION_EMAIL;
+
+    if (!gmailUser || !gmailAppPassword || !notificationEmail) {
+      console.error('❌ Email not configured: set GMAIL_USER, GMAIL_APP_PASSWORD and BOOKING_NOTIFICATION_EMAIL');
+      return NextResponse.json(
+        { success: false, error: 'Email service is not configured' },
+        { status: 500 }
+      );
+    }
+
     const body = await request.json();
-    console.log('📧 Full request body:', body);
 
     // 👇 SAARE PARAMETERS RECEIVE KARO
     const { 
@@ -41,8 +52,8 @@ export async function POST(request: Request) {
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
-        user: 'notificationfromsilvermaid@gmail.com',
-        pass: '***REMOVED-GMAIL-APP-PASSWORD***',
+        user: gmailUser,
+        pass: gmailAppPassword,
       },
     });
 
@@ -191,8 +202,8 @@ export async function POST(request: Request) {
     `;
 
     const mailOptions = {
-      from: '"SilverMaid" <notificationfromsilvermaid@gmail.com>',
-      to: 'faizaijaz691@gmail.com',
+      from: `"SilverMaid" <${gmailUser}>`,
+      to: notificationEmail,
       subject: finalStaffName !== 'Not assigned' 
         ? `📋 ${clientName} - ${serviceName} (Staff: ${finalStaffName}) #${bookingId}`
         : `📋 ${clientName} - ${serviceName} #${bookingId}`,
