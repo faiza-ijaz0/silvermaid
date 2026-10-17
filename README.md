@@ -268,7 +268,7 @@ You can run the app on any other host that supports Next.js 16 with `npm run bui
 
 - **Keep secrets in environment variables.** `.env*` files are ignored by Git, and only `.env.example` (placeholders only) is committed. Never commit `.env.local`.
 - **The Firebase web config is not a secret.** The API key in `lib/firebase.ts` only identifies the project to Google and is visible in every browser that loads the app. What actually protects the data is **Firestore and Storage security rules**, together with API-key restrictions in Google Cloud. Those rules are managed in the Firebase console and are not stored in this repository. Make sure they require authentication and check each user's role before allowing writes.
-- **Gmail credentials.** Use a dedicated sending account with an App Password and rotate it whenever it might have been exposed. Earlier commits in this repository contained a hard-coded App Password. That credential should be treated as compromised and revoked.
+- **Gmail credentials.** Use a dedicated sending account with an App Password and rotate it whenever it might have been exposed. An earlier commit contained a hard-coded App Password. It has been replaced in the Git history, but it was public before that, so it must be treated as compromised and revoked.
 - **Booking email endpoint.** `/api/send-booking-email` validates its input and escapes all customer-supplied values in the email. It also applies a per-instance rate limit and duplicate suppression; add a Vercel Firewall rule for durable limits.
 
 See [SECURITY.md](SECURITY.md) for the full security model, the open issues and the exact manual steps required in Google, Firebase and Vercel.

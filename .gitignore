@@ -24,6 +24,14 @@
 .DS_Store
 *.pem
 
+# credentials (e.g. Firebase Admin SDK service-account keys)
+*.key
+*.p12
+*.pfx
+*firebase-adminsdk*.json
+service-account*.json
+serviceAccount*.json
+
 # debug
 npm-debug.log*
 yarn-debug.log*

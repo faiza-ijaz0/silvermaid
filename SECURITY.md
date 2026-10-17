@@ -31,14 +31,18 @@ These cannot be done from the codebase and are listed in priority order.
 
 ### 1. Revoke the exposed Gmail App Password (Google Account)
 
-A Gmail App Password for `notificationfromsilvermaid@gmail.com` was committed in `050b0c7` and is still readable in the public Git history. Removing it from the current code does not remove it from history.
+A Gmail App Password for `notificationfromsilvermaid@gmail.com` was committed to this public repository in March 2026 (commit "completed") and was publicly readable until the Git history was rewritten on 17 October 2026 to replace it with a placeholder. Cleaning the history does not make the password safe: it was public for months and may survive in clones, forks, caches and scraped copies.
 
 1. Sign in to that Google account → **Security → 2-Step Verification → App passwords**.
 2. Revoke the existing app password.
 3. Create a new one for "Silvermaid booking notifications".
 4. Review **Security → Recent security activity** and the account's **Sent** folder for unexpected use.
 
-Rewriting Git history is not recommended here: the repository is public, so the old value must be assumed copied already. Revocation is the fix.
+Revocation is the only real fix; the history rewrite only stops further exposure from this repository. After the rewrite was published, the following still need attention:
+
+- **GitHub:** commits that are no longer on any branch can stay reachable by their old SHA until GitHub garbage-collects them. Ask [GitHub Support](https://support.github.com/) to remove cached views of the affected commits (see "Removing sensitive data from a repository" in the GitHub docs).
+- **Vercel:** deployments built from the affected commits contain the password in their server bundle. Delete them under **Vercel → Project → Deployments**.
+- **Local copies:** any other clone made before the rewrite still has the old history. Delete it and re-clone instead of pulling into it.
 
 ### 2. Configure the booking email in Vercel
 
@@ -87,6 +91,14 @@ In **Google Cloud console → APIs & Services → Credentials**, edit the browse
 - Under **API restrictions**, limit the key to the Firebase APIs the app uses (Identity Toolkit, Cloud Firestore, Firebase Installations, Firebase Storage and Firebase Analytics-related APIs).
 
 Also consider enabling **Firebase App Check** for Firestore and Storage.
+
+### 6. Check for accounts that use published demo passwords (Firebase console)
+
+Earlier versions of the code contained hard-coded demo logins, which remain in the Git history. Examples are the `admin@silvermaid.com`, `manager@silvermaid.com` and `employee@silvermaid.com` addresses used by the removed `DEMO_CREDENTIALS`, and `@homeware.ae` / `@homeware.com` mock users. Their passwords are short, guessable strings and must be treated as public. In **Firebase console → Authentication → Users** for `silvermaid-94246`, check whether any of these addresses exist. If they do, delete them or reset their passwords, and make sure no real account reuses those passwords.
+
+### 7. Review the old `homework-a36e3` Firebase project (Firebase / Google Cloud console)
+
+Early commits configured a different Firebase project, `homework-a36e3`. Its web API key is public by design, but if the project is still active with open Firestore or Storage rules, its data is exposed. Delete the project if it is no longer used. Otherwise apply steps 4 and 5 to it.
 
 ## Known open issues
 
