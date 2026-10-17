@@ -3,6 +3,7 @@ import {
   signInWithEmailAndPassword, 
   signOut,
   updateProfile,
+  onAuthStateChanged,
   User
 } from 'firebase/auth'
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs } from 'firebase/firestore'
@@ -91,6 +92,8 @@ export async function getUserRole(uid: string): Promise<UserRole | null> {
     
     if (docSnap.exists()) {
       const data = docSnap.data()
+      // deleteUserRole marks records as deleted instead of removing them
+      if (data.deleted) return null
       return {
         id: docSnap.id,
         email: data.email || '',
@@ -171,23 +174,8 @@ export async function validateCredentials(portal: 'admin' | 'employee', email: s
       }
     }
     
-    const session: SessionData = {
-      user: {
-        uid: userCredential.user.uid,
-        email: userCredential.user.email,
-        name: userRole.name
-      },
-      allowedPages: userRole.allowedPages,
-      portal: userRole.portal,
-      employeeId: userRole.employeeId,
-      employeeName: userRole.employeeName,
-      loggedInAt: new Date().toISOString(),
-      roleName: '',
-      name: function (arg0: string, name: any): unknown {
-        throw new Error('Function not implemented.')
-      }
-    }
-    
+    const session = buildSession(userCredential.user, userRole)
+
     // Determine redirect path based on portal
     const redirectTo = portal === 'admin' ? '/admin/dashboard' : '/employee/chat'
     
@@ -253,13 +241,58 @@ export async function logout() {
   }
 }
 
-export const DEMO_CREDENTIALS: Record<string, { email: string; password: string }> = {
-  admin: { email: 'admin@silvermaid.com', password: 'admin123' },
-  manager: { email: 'manager@silvermaid.com', password: 'manager123' },
-  supervisor: { email: 'supervisor@silvermaid.com', password: 'supervisor123' },
-  employee: { email: 'employee@silvermaid.com', password: 'employee123' },
-  client: { email: 'client@silvermaid.com', password: 'client123' },
-  guest: { email: 'guest@silvermaid.com', password: 'guest123' }
-};
+function buildSession(firebaseUser: User, userRole: UserRole): SessionData {
+  return {
+    user: {
+      uid: firebaseUser.uid,
+      email: firebaseUser.email,
+      name: userRole.name
+    },
+    allowedPages: userRole.allowedPages,
+    portal: userRole.portal,
+    employeeId: userRole.employeeId,
+    employeeName: userRole.employeeName,
+    loggedInAt: new Date().toISOString(),
+    roleName: '',
+    name: function (arg0: string, name: any): unknown {
+      throw new Error('Function not implemented.')
+    }
+  }
+}
+
+// Resolves with the signed-in Firebase user once Auth has restored its persisted state.
+function waitForAuthUser(): Promise<User | null> {
+  return new Promise((resolve) => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      unsubscribe()
+      resolve(user)
+    })
+  })
+}
+
+// Rebuilds the portal session from Firebase Auth and the user's users-role record instead of
+// trusting localStorage, which the browser user can edit. Returns null when the visitor is not
+// signed in or does not belong to the portal. This gates the UI only; Firestore security rules
+// must still enforce access to the data itself.
+export async function verifySession(portal: 'admin' | 'employee'): Promise<SessionData | null> {
+  const firebaseUser = await waitForAuthUser()
+  if (!firebaseUser) {
+    clearSession()
+    return null
+  }
+
+  const userRole = await getUserRole(firebaseUser.uid)
+  if (!userRole || userRole.portal !== portal) {
+    return null
+  }
+
+  const session = buildSession(firebaseUser, userRole)
+  const previous = getSession()
+  if (previous?.user?.uid === firebaseUser.uid && previous.loggedInAt) {
+    session.loggedInAt = previous.loggedInAt
+  }
+  storeSession(session)
+  return session
+}
 
 export type PortalType = 'admin' | 'manager' | 'supervisor' | 'employee' | 'client' | 'guest';

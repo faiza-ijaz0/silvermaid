@@ -51,7 +51,8 @@ import {
   Bot,
   MessageCircle,
 } from "lucide-react";
-import { getSession, logout } from "@/lib/auth";
+import { logout, verifySession } from "@/lib/auth";
+import { isPathAllowed } from "@/lib/admin-access";
 import { db } from "@/lib/firebase";
 import {
   collection,
@@ -519,52 +520,64 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }, [userSession, saveProcessedBookingIds]);
 
   useEffect(() => {
-    const session = getSession();
-    if (session) {
-      const allowedPages = session.allowedPages || [];
-      const allAllowedPages = [...allowedPages];
+    let cancelled = false;
 
-      if (!allAllowedPages.includes("Process Inquiry")) {
-        allAllowedPages.push("Process Inquiry");
-      }
+    // Verify against Firebase Auth and users-role rather than trusting localStorage
+    verifySession("admin").then((session) => {
+      if (cancelled) return;
+      if (session) {
+        const allowedPages = session.allowedPages || [];
+        const allAllowedPages = [...allowedPages];
 
-      // ✅ FIXED: Make sure Employee Chat is included in allowed pages
-      if (
-        !allAllowedPages.includes("Employee Chat") &&
-        allAllowedPages.includes("Employee Chat")
-      ) {
-        // This is just a safety check
-      }
+        if (!allAllowedPages.includes("Process Inquiry")) {
+          allAllowedPages.push("Process Inquiry");
+        }
 
-      setUserSession({
-        name: session.user.name || "User",
-        email: session.user.email || "",
-        allowedPages: allAllowedPages,
-        roleName: session.portal || "User", // ✅ Changed from roleName to portal
-      });
+        // ✅ FIXED: Make sure Employee Chat is included in allowed pages
+        if (
+          !allAllowedPages.includes("Employee Chat") &&
+          allAllowedPages.includes("Employee Chat")
+        ) {
+          // This is just a safety check
+        }
 
-      const currentMenu = MENU_STRUCTURE.find(
-        (menu) =>
-          menu.type === "group" &&
-          menu.submenu?.some(
-            (sub) =>
-              ALL_PAGES_CONFIG[sub.key as keyof typeof ALL_PAGES_CONFIG]
-                ?.href === pathname,
-          ),
-      );
-      if (currentMenu) {
-        setOpenMenus((prev) => ({ ...prev, [currentMenu.key]: true }));
-      }
-
-      if ("Notification" in window && Notification.permission === "default") {
-        Notification.requestPermission().then((permission) => {
-          console.log("Notification permission:", permission);
+        setUserSession({
+          name: session.user.name || "User",
+          email: session.user.email || "",
+          allowedPages: allAllowedPages,
+          roleName: session.portal || "User", // ✅ Changed from roleName to portal
         });
+
+        if ("Notification" in window && Notification.permission === "default") {
+          Notification.requestPermission().then((permission) => {
+            console.log("Notification permission:", permission);
+          });
+        }
+      } else {
+        setUserSession(null);
+        router.push("/login");
       }
-    } else {
-      router.push("/login");
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  useEffect(() => {
+    const currentMenu = MENU_STRUCTURE.find(
+      (menu) =>
+        menu.type === "group" &&
+        menu.submenu?.some(
+          (sub) =>
+            ALL_PAGES_CONFIG[sub.key as keyof typeof ALL_PAGES_CONFIG]
+              ?.href === pathname,
+        ),
+    );
+    if (currentMenu) {
+      setOpenMenus((prev) => ({ ...prev, [currentMenu.key]: true }));
     }
-  }, [router, pathname]);
+  }, [pathname]);
 
   const handleSignOut = async () => {
     setIsSigningOut(true);
@@ -694,15 +707,21 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 
   const filteredMenuItems = getFilteredMenuItems();
 
+  // Don't render admin pages (and their Firestore queries) until the session is verified
   if (!userSession) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex">
-        <main className="flex-1 p-8 overflow-y-auto">
-          <div className="w-full">{children}</div>
-        </main>
+      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
       </div>
     );
   }
+
+  const pageAllowed = isPathAllowed(
+    pathname,
+    userSession.allowedPages,
+    ALL_PAGES_CONFIG,
+    MENU_STRUCTURE,
+  );
 
   return (
     <div className="min-h-screen bg-background text-foreground flex">
@@ -1203,7 +1222,23 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </header>
 
         <main className="flex-1 p-6 overflow-y-auto bg-muted/20">
-          <div className="w-full">{children}</div>
+          <div className="w-full">
+            {pageAllowed ? (
+              children
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center py-24 gap-3">
+                <Lock className="h-10 w-10 text-muted-foreground" />
+                <h2 className="text-xl font-semibold">Access restricted</h2>
+                <p className="text-muted-foreground max-w-md">
+                  Your account does not have permission to view this page. Ask an
+                  administrator to grant access in Role Manager.
+                </p>
+                <Link href="/admin/dashboard" className="text-primary font-medium hover:underline">
+                  Back to dashboard
+                </Link>
+              </div>
+            )}
+          </div>
         </main>
       </div>
     </div>
